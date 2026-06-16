@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Cotización — ONO Art Gallery</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap');
+
+        /* ─── Reset ───────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        /* ─── Root tokens ─────────────────────────────────────── */
+        :root {
+            --gold:   #D4B75E;
+            --gold-d: #c2a651;
+            --bg:     #080808;
+            --panel:  #101010;
+            --card:   #141414;
+            --border: #242424;
+            --muted:  #666;
+            --text:   #f0f0f0;
+            --sidebar-w: 380px;
+        }
+
+        /* ─── Layout ──────────────────────────────────────────── */
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Montserrat', sans-serif;
+            min-height: 100vh;
+            display: grid;
+            grid-template-rows: 56px 1fr;
+            grid-template-columns: var(--sidebar-w) 1fr;
+            grid-template-areas:
+                "topbar topbar"
+                "sidebar preview";
+        }
+
+        /* ─── Top bar ─────────────────────────────────────────── */
+        .topbar {
+            grid-area: topbar;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .topbar-brand {
+            font-size: 13px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            font-weight: 300;
+        }
+        .topbar-brand span { color: var(--gold); }
+        .topbar-actions { display: flex; gap: 12px; }
+
+        /* ─── Sidebar ─────────────────────────────────────────── */
+        .sidebar {
+            grid-area: sidebar;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 28px 24px 60px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        /* ─── Section headers in sidebar ─────────────────────── */
+        .section-label {
+            font-size: 9px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--gold);
+            padding: 22px 0 10px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        /* ─── Field rows ──────────────────────────────────────── */
+        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+        .field label {
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .field input, .field textarea {
+            background: var(--card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: 'Montserrat', sans-serif;
+            font-size: 13px;
+            padding: 10px 12px;
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s;
+            resize: vertical;
+        }
+        .field input:focus, .field textarea:focus {
+            border-color: var(--gold);
+        }
+        .field input[type="number"] { -moz-appearance: textfield; }
+        .field input[type="number"]::-webkit-outer-spin-button,
+        .field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+        /* ─── Image upload ────────────────────────────────────── */
+        .upload-zone {
+            border: 1.5px dashed var(--border);
+            border-radius: 6px;
+            padding: 18px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative;
+            background: var(--card);
+            margin-bottom: 14px;
+        }
+        .upload-zone:hover { border-color: var(--gold); background: #1a1a14; }
+        .upload-zone input[type="file"] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+        }
+        .upload-zone .upload-icon { font-size: 24px; margin-bottom: 6px; }
+        .upload-zone p { font-size: 10px; color: var(--muted); line-height: 1.6; }
+        .upload-zone p strong { color: var(--gold); }
+        .upload-zone.disabled { opacity: 0.4; pointer-events: none; }
+
+        /* Multi-image thumbnails in sidebar */
+        .img-slots { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+        .img-slot {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            overflow: hidden;
+            display: none; /* shown when image is loaded */
+            position: relative;
+        }
+        .img-slot img {
+            width: 100%;
+            max-height: 120px;
+            object-fit: contain;
+            display: block;
+            background: #000;
+        }
+        .img-slot-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px;
+            font-size: 10px;
+            color: var(--muted);
+            letter-spacing: 1px;
+        }
+        .img-slot-bar button {
+            background: transparent;
+            border: 1px solid #444;
+            color: #888;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: 'Montserrat', sans-serif;
+            transition: all 0.2s;
+        }
+        .img-slot-bar button:hover { border-color: #f00; color: #f00; }
+
+        /* Gallery in quotation preview */
+        .q-gallery {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 40px;
+        }
+        .q-gallery.count-1 { grid-template-columns: 1fr; }
+        .q-gallery.count-2 { grid-template-columns: 1fr 1fr; }
+        .q-gallery.count-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .q-gallery-cell {
+            background: #000;
+            border: 1px solid #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 160px;
+            padding: 8px;
+        }
+        .q-gallery-cell img {
+            max-width: 100%;
+            max-height: 240px;
+            height: auto;
+            display: block;
+        }
+        .q-gallery-placeholder {
+            color: #333;
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+            width: 100%;
+        }
+
+        /* ─── Currency toggle ─────────────────────────────────── */
+        .currency-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .currency-toggle button {
+            flex: 1;
+            background: var(--card);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-family: 'Montserrat', sans-serif;
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 9px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .currency-toggle button.active {
+            background: var(--gold);
+            border-color: var(--gold);
+            color: #000;
+            font-weight: 600;
+        }
+
+        /* ─── Row with 2 fields ───────────────────────────────── */
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        /* ─── Buttons ─────────────────────────────────────────── */
+        .btn {
+            padding: 13px 24px;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.25s ease;
+            border: none;
+        }
+        .btn-outline {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid #444;
+        }
+        .btn-outline:hover { border-color: var(--text); }
+        .btn-gold {
+            background: var(--gold);
+            color: #000;
+            font-weight: 600;
+        }
+        .btn-gold:hover { background: var(--gold-d); }
+        .btn-sm {
+            padding: 10px 18px;
+            font-size: 10px;
+        }
+        .sidebar-download {
+            margin-top: 28px;
+            width: 100%;
+            padding: 14px;
+        }
+
+        /* ─── Preview area ────────────────────────────────────── */
+        .preview-area {
+            grid-area: preview;
+            overflow-y: auto;
+            background: #1c1c1c;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 50px 30px;
+        }
+
+        /* ─────────────────────────────────────────────────────── */
+        /*  QUOTATION DOCUMENT (mirrors index.html exactly)       */
+        /* ─────────────────────────────────────────────────────── */
+        #quotation-preview {
+            max-width: 800px;
+            width: 100%;
+            padding: 50px;
+            background-color: #111111;
+            border: 1px solid #2a2a2a;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        }
+
+        #quotation-preview header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+
+        .q-logo {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 300;
+            font-size: 32px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: #f4f4f4;
+        }
+        .q-logo span {
+            display: block;
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        .q-header-right { text-align: right; }
+        .q-header-right h1 {
+            margin: 0;
+            font-size: 13px;
+            color: #D4B75E;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .q-header-right p { margin: 5px 0 0; font-size: 12px; color: #888; }
+
+        .q-artwork-section {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+        .q-image-box {
+            flex: 1;
+            background-color: #000;
+            border: 1px solid #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            min-height: 200px;
+        }
+        .q-image-box img {
+            max-width: 100%;
+            max-height: 300px;
+            height: auto;
+            display: block;
+        }
+        .q-image-placeholder {
+            color: #333;
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+        }
+
+        .q-details {
+            flex: 1.2;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .q-category {
+            color: #D4B75E;
+            font-size: 12px;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .q-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 36px;
+            margin: 0 0 20px 0;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #f4f4f4;
+        }
+        .q-specs {
+            list-style: none;
+            padding: 0;
+            font-size: 13px;
+            color: #bbb;
+            line-height: 2;
+        }
+        .q-specs strong { color: #fff; font-weight: 400; }
+
+        .q-price-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+        }
+        .q-price-table th, .q-price-table td {
+            padding: 15px 0;
+            border-bottom: 1px solid #2a2a2a;
+            text-align: left;
+            font-size: 14px;
+            color: #f4f4f4;
+        }
+        .q-price-table th {
+            color: #888;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 11px;
+        }
+        .q-price-table td:last-child,
+        .q-price-table th:last-child { text-align: right; }
+        .q-discount td { color: #bbb; }
+        .q-total td {
+            border-bottom: none;
+            font-size: 20px;
+            font-family: 'Playfair Display', serif;
+            padding-top: 25px;
+        }
+        .q-total .gold { color: #D4B75E; }
+
+        .q-notes {
+            border-top: 1px solid #2a2a2a;
+            padding-top: 24px;
+            margin-bottom: 40px;
+            font-size: 12px;
+            color: #777;
+            line-height: 1.8;
+        }
+        .q-notes:empty { display: none; }
+
+        /* q-actions removed — buttons no longer appear on the template */
+
+        /* ─── Loader overlay ──────────────────────────────────── */
+        #loader {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 16px;
+        }
+        #loader.active { display: flex; }
+        .loader-ring {
+            width: 44px; height: 44px;
+            border: 3px solid #333;
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        #loader p { font-size: 12px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── Scrollbar ───────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+    </style>
+</head>
+
+<body>
+
+<!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
+<div class="topbar">
+    <div class="topbar-brand">ONO <span>|</span> Editor de Cotización</div>
+    <div class="topbar-actions">
+        <button class="btn btn-outline btn-sm" id="btn-topbar-pdf">⬇ Descargar PDF</button>
+    </div>
+</div>
+
+<!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
+<aside class="sidebar">
+
+    <!-- GALERÍA / ENCABEZADO -->
+    <div class="section-label">Encabezado</div>
+
+    <div class="field">
+        <label>Nombre de la galería</label>
+        <input type="text" id="f-gallery" value="ONO" placeholder="ONO">
+    </div>
+    <div class="field">
+        <label>Subtítulo de galería</label>
+        <input type="text" id="f-gallery-sub" value="Art Gallery" placeholder="Art Gallery">
+    </div>
+    <div class="field">
+        <label>Título del documento</label>
+        <input type="text" id="f-doc-title" value="Cotización Comercial" placeholder="Cotización Comercial">
+    </div>
+    <div class="field-row">
+        <div class="field">
+            <label>Folio</label>
+            <input type="text" id="f-folio" value="ONO-2026-085" placeholder="ONO-2026-001">
+        </div>
+        <div class="field">
+            <label>Fecha</label>
+            <input type="date" id="f-date">
+        </div>
+    </div>
+
+    <!-- OBRA -->
+    <div class="section-label">Obra de Arte</div>
+
+    <div class="field">
+        <label>Categoría</label>
+        <input type="text" id="f-category" value="Contemporary Art" placeholder="Contemporary Art">
+    </div>
+    <div class="field">
+        <label>Nombre de la obra</label>
+        <input type="text" id="f-artwork" value="IPANEMA" placeholder="Nombre de la obra">
+    </div>
+    <div class="field">
+        <label>Técnica</label>
+        <input type="text" id="f-technique" value="Mixta" placeholder="Óleo sobre tela, Mixta…">
+    </div>
+    <div class="field">
+        <label>Dimensiones</label>
+        <input type="text" id="f-dimensions" value="Por definir" placeholder="100 x 80 cm">
+    </div>
+    <div class="field">
+        <label>Año</label>
+        <input type="number" id="f-year" value="2026" placeholder="2026">
+    </div>
+    <div class="field">
+        <label>Certificado</label>
+        <input type="text" id="f-cert" value="Incluye certificado de autenticidad firmado por el autor." placeholder="Certificado de autenticidad…">
+    </div>
+
+    <!-- IMÁGENES (hasta 3) -->
+    <div class="section-label">Imágenes de la Obra <span style="color:#555;font-weight:400">(máx. 3)</span></div>
+
+    <!-- Uploaded thumbs -->
+    <div class="img-slots">
+        <div class="img-slot" id="slot-0">
+            <img id="slot-img-0" src="" alt="Foto 1">
+            <div class="img-slot-bar"><span>Foto 1</span><button onclick="removeSlot(0)">✕ Quitar</button></div>
+        </div>
+        <div class="img-slot" id="slot-1">
+            <img id="slot-img-1" src="" alt="Foto 2">
+            <div class="img-slot-bar"><span>Foto 2</span><button onclick="removeSlot(1)">✕ Quitar</button></div>
+        </div>
+        <div class="img-slot" id="slot-2">
+            <img id="slot-img-2" src="" alt="Foto 3">
+            <div class="img-slot-bar"><span>Foto 3</span><button onclick="removeSlot(2)">✕ Quitar</button></div>
+        </div>
+    </div>
+
+    <!-- Upload button -->
+    <div class="upload-zone" id="upload-zone">
+        <input type="file" id="img-upload" accept="image/*" multiple>
+        <div class="upload-icon">🖼️</div>
+        <p><strong>Haz clic o arrastra</strong><br>para agregar fotos (hasta 3)</p>
+    </div>
+
+    <!-- PRECIOS -->
+    <div class="section-label">Precios</div>
+
+    <div class="field">
+        <label>Moneda</label>
+        <div class="currency-toggle">
+            <button class="active" data-cur="MXN" id="cur-mxn">MXN</button>
+            <button data-cur="USD" id="cur-usd">USD</button>
+            <button data-cur="EUR" id="cur-eur">EUR</button>
+        </div>
+    </div>
+    <div class="field">
+        <label>Precio de lista (en moneda elegida)</label>
+        <input type="number" id="f-price-list" value="85000" step="0.01" placeholder="85000">
+    </div>
+    <div class="field">
+        <label>Concepto del precio</label>
+        <input type="text" id="f-price-label" value='Obra Original: "IPANEMA" (US$ 5,000)' placeholder="Concepto de la obra">
+    </div>
+    <div class="field">
+        <label>Descuento (0 = sin descuento)</label>
+        <input type="number" id="f-discount" value="10000" step="0.01" placeholder="0">
+    </div>
+    <div class="field">
+        <label>Etiqueta descuento</label>
+        <input type="text" id="f-discount-label" value="Descuento especial" placeholder="Descuento especial">
+    </div>
+
+    <!-- NOTAS -->
+    <div class="section-label">Notas (opcional)</div>
+    <div class="field">
+        <textarea id="f-notes" rows="4" placeholder="Términos, condiciones, notas adicionales…"></textarea>
+    </div>
+
+    <button class="btn btn-gold sidebar-download" id="btn-sidebar-pdf">⬇ Descargar PDF</button>
+
+</aside>
+
+<!-- ═══════════════════════ PREVIEW ═══════════════════════ -->
+<main class="preview-area">
+    <div id="quotation-preview">
+
+        <header>
+            <div class="q-logo" id="p-gallery">ONO<span id="p-gallery-sub">Art Gallery</span></div>
+            <div class="q-header-right">
+                <h1 id="p-doc-title">Cotización Comercial</h1>
+                <p id="p-folio">Folio: #ONO-2026-085</p>
+                <p id="p-date">Fecha: —</p>
+            </div>
+        </header>
+
+        <!-- Gallery: 1-3 images above the details -->
+        <div class="q-gallery count-1" id="p-gallery-grid">
+            <div class="q-gallery-cell" id="p-cell-0">
+                <img id="p-img-0" src="" alt="Foto 1" style="display:none;">
+                <div class="q-gallery-placeholder" id="p-ph-0">Sin imagen</div>
+            </div>
+        </div>
+
+        <div class="q-artwork-section" style="margin-top:0;">
+            <div class="q-details" style="flex:1;">
+                <div class="q-category" id="p-category">Contemporary Art</div>
+                <h2 class="q-title" id="p-artwork">IPANEMA</h2>
+                <ul class="q-specs">
+                    <li><strong>Técnica:</strong> <span id="p-technique">Mixta</span></li>
+                    <li><strong>Dimensiones:</strong> <span id="p-dimensions">Por definir</span></li>
+                    <li><strong>Año:</strong> <span id="p-year">2026</span></li>
+                    <li><strong>Certificado:</strong> <span id="p-cert">Incluye certificado de autenticidad firmado por el autor.</span></li>
+                </ul>
+            </div>
+        </div>
+
+        <table class="q-price-table">
+            <thead>
+                <tr>
+                    <th>Concepto</th>
+                    <th>Monto</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td id="p-price-label">Obra Original: "IPANEMA" (US$ 5,000)</td>
+                    <td id="p-price-amount">$85,000.00 MXN</td>
+                </tr>
+                <tr class="q-discount" id="p-discount-row">
+                    <td id="p-discount-label">Descuento especial</td>
+                    <td id="p-discount-amount">−$10,000.00 MXN</td>
+                </tr>
+                <tr class="q-total">
+                    <td>Total a Pagar</td>
+                    <td class="gold" id="p-total">$75,000.00 MXN</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="q-notes" id="p-notes"></div>
+
+    </div>
+</main>
+
+<!-- ═══════════════════════ LOADER ═══════════════════════ -->
+<div id="loader">
+    <div class="loader-ring"></div>
+    <p>Generando PDF…</p>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════ */
+function $(id) { return document.getElementById(id); }
+
+let currency = 'MXN';
+
+/* Images array — up to 3 slots */
+const images = [null, null, null]; // each entry: dataURL string or null
+const MAX_IMAGES = 3;
+
+/* ─── Currency symbols ─── */
+const CUR_SYMBOL = { MXN: '$', USD: 'US$', EUR: '€' };
+
+function formatMoney(amount, cur) {
+    const sym = CUR_SYMBOL[cur] || '$';
+    return sym + Number(amount).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + cur;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIVE UPDATES
+═══════════════════════════════════════════════════════ */
+function syncAll() {
+    /* Header */
+    const galleryName = $('f-gallery').value.trim() || 'ONO';
+    const gallerySub  = $('f-gallery-sub').value.trim() || 'Art Gallery';
+    $('p-gallery').childNodes[0].textContent = galleryName;
+    $('p-gallery-sub').textContent = gallerySub;
+
+    $('p-doc-title').textContent = $('f-doc-title').value.trim() || 'Cotización Comercial';
+
+    const folio = $('f-folio').value.trim();
+    $('p-folio').textContent = 'Folio: #' + (folio || '—');
+
+    const dateVal = $('f-date').value;
+    if (dateVal) {
+        const d = new Date(dateVal + 'T12:00:00');
+        $('p-date').textContent = 'Fecha: ' + d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+    } else {
+        $('p-date').textContent = 'Fecha: —';
+    }
+
+    /* Artwork */
+    $('p-category').textContent  = $('f-category').value.trim()   || 'Contemporary Art';
+    $('p-artwork').textContent   = $('f-artwork').value.trim()     || 'Título';
+    $('p-technique').textContent = $('f-technique').value.trim()   || '—';
+    $('p-dimensions').textContent= $('f-dimensions').value.trim()  || '—';
+    $('p-year').textContent      = $('f-year').value               || '—';
+    $('p-cert').textContent      = $('f-cert').value.trim()        || '—';
+
+    /* Prices */
+    const listPrice = parseFloat($('f-price-list').value) || 0;
+    const discount  = parseFloat($('f-discount').value)   || 0;
+    const total     = Math.max(0, listPrice - discount);
+
+    $('p-price-label').textContent   = $('f-price-label').value.trim() || 'Precio de lista';
+    $('p-price-amount').textContent  = formatMoney(listPrice, currency);
+    $('p-discount-label').textContent= $('f-discount-label').value.trim() || 'Descuento';
+    $('p-discount-amount').textContent = '−' + formatMoney(discount, currency);
+    $('p-total').textContent         = formatMoney(total, currency);
+
+    /* Show/hide discount row */
+    $('p-discount-row').style.display = discount > 0 ? '' : 'none';
+
+    /* Notes */
+    $('p-notes').textContent = $('f-notes').value.trim();
+
+    /* Page title */
+    document.title = 'Cotización ' + ($('f-artwork').value.trim() || 'ONO') + ' — ONO Art Gallery';
+}
+
+/* ─── Attach listeners ─── */
+[
+    'f-gallery','f-gallery-sub','f-doc-title','f-folio','f-date',
+    'f-category','f-artwork','f-technique','f-dimensions','f-year','f-cert',
+    'f-price-list','f-price-label','f-discount','f-discount-label','f-notes'
+].forEach(id => $(id).addEventListener('input', syncAll));
+
+/* ═══════════════════════════════════════════════════════
+   CURRENCY TOGGLE
+═══════════════════════════════════════════════════════ */
+document.querySelectorAll('.currency-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        currency = btn.dataset.cur;
+        document.querySelectorAll('.currency-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        syncAll();
+    });
+});
+
+/* ═══════════════════════════════════════════════════════
+   MULTI-IMAGE UPLOAD
+═══════════════════════════════════════════════════════ */
+function renderGallery() {
+    const filled = images.filter(Boolean);
+    const count  = filled.length;
+    const grid   = $('p-gallery-grid');
+
+    /* Rebuild grid cells dynamically */
+    grid.innerHTML = '';
+    grid.className = 'q-gallery count-' + (count || 1);
+
+    if (count === 0) {
+        grid.innerHTML = '<div class="q-gallery-cell"><div class="q-gallery-placeholder">Sin imagen</div></div>';
+        return;
+    }
+
+    filled.forEach((src, i) => {
+        const cell = document.createElement('div');
+        cell.className = 'q-gallery-cell';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = 'Foto ' + (i + 1);
+        cell.appendChild(img);
+        grid.appendChild(cell);
+    });
+}
+
+function renderSlots() {
+    const filled = images.filter(Boolean).length;
+    for (let i = 0; i < MAX_IMAGES; i++) {
+        const slot   = $('slot-' + i);
+        const slotImg= $('slot-img-' + i);
+        if (images[i]) {
+            slotImg.src = images[i];
+            slot.style.display = 'block';
+        } else {
+            slot.style.display = 'none';
+            slotImg.src = '';
+        }
+    }
+    /* Disable upload zone if 3 images already loaded */
+    const zone = $('upload-zone');
+    if (filled >= MAX_IMAGES) {
+        zone.classList.add('disabled');
+    } else {
+        zone.classList.remove('disabled');
+    }
+}
+
+function addImages(files) {
+    const filled = images.filter(Boolean).length;
+    const slots  = MAX_IMAGES - filled;
+    const toLoad = Array.from(files).slice(0, slots);
+
+    toLoad.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            /* Find first empty slot */
+            const idx = images.indexOf(null);
+            if (idx === -1) return;
+            images[idx] = e.target.result;
+            renderSlots();
+            renderGallery();
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+window.removeSlot = function(idx) {
+    images[idx] = null;
+    renderSlots();
+    renderGallery();
+    $('img-upload').value = '';
+};
+
+$('img-upload').addEventListener('change', function () {
+    if (!this.files.length) return;
+    addImages(this.files);
+    this.value = ''; /* reset so same file can be re-added after removal */
+});
+
+/* Drag-and-drop onto upload zone */
+$('upload-zone').addEventListener('dragover', e => { e.preventDefault(); $('upload-zone').style.borderColor = 'var(--gold)'; });
+$('upload-zone').addEventListener('dragleave', () => { $('upload-zone').style.borderColor = ''; });
+$('upload-zone').addEventListener('drop', e => {
+    e.preventDefault();
+    $('upload-zone').style.borderColor = '';
+    if (e.dataTransfer.files.length) addImages(e.dataTransfer.files);
+});
+
+/* ═══════════════════════════════════════════════════════
+   PDF DOWNLOAD
+═══════════════════════════════════════════════════════ */
+async function downloadPDF() {
+    $('loader').classList.add('active');
+
+    const element = $('quotation-preview');
+    const artworkName = ($('f-artwork').value.trim() || 'cotizacion').toLowerCase().replace(/\s+/g, '-');
+    const filename = `cotizacion-${artworkName}-ono.pdf`;
+
+    const opt = {
+        margin:      [10, 10, 10, 10],
+        filename:    filename,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#111111',
+            letterRendering: true,
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'portrait'
+        },
+        pagebreak: { mode: ['avoid-all'] }
+    };
+
+    try {
+        await html2pdf().set(opt).from(element).save();
+    } finally {
+        $('loader').classList.remove('active');
+    }
+}
+
+$('btn-topbar-pdf').addEventListener('click', downloadPDF);
+$('btn-sidebar-pdf').addEventListener('click', downloadPDF);
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+const today = new Date();
+const yyyy = today.getFullYear();
+const mm   = String(today.getMonth() + 1).padStart(2, '0');
+const dd   = String(today.getDate()).padStart(2, '0');
+$('f-date').value = `${yyyy}-${mm}-${dd}`;
+
+renderSlots();
+renderGallery();
+syncAll();
+</script>
+
+</body>
+</html>
