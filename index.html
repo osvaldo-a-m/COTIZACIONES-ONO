@@ -1039,13 +1039,13 @@
 
                 // Convert canvas pixels → mm (96 dpi × scale 2)
                 const pxPerMm = (96 * 2) / 25.4;
-                const contentW = canvas.width  / pxPerMm;
+                const contentW = canvas.width / pxPerMm;
                 const contentH = canvas.height / pxPerMm;
 
                 // Scale so the whole content fits on one A4 page
-                const fit    = Math.min(availW / contentW, availH / contentH);
-                const drawW  = contentW * fit;
-                const drawH  = contentH * fit;
+                const fit = Math.min(availW / contentW, availH / contentH);
+                const drawW = contentW * fit;
+                const drawH = contentH * fit;
                 const offsetX = margin + (availW - drawW) / 2;
                 const offsetY = margin;
 
